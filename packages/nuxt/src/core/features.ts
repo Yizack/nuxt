@@ -12,7 +12,7 @@ interface EnsurePackageInstalledOptions {
   prompt?: boolean
 }
 
-async function promptToInstall (name: string, installCommand: () => Promise<void>, options: EnsurePackageInstalledOptions) {
+async function promptToInstall (name: string, installCommand: () => Promise<unknown>, options: EnsurePackageInstalledOptions) {
   for (const parent of options.searchPaths || []) {
     if (await resolvePackageJSON(name, { parent }).catch(() => null)) {
       return true
@@ -48,7 +48,7 @@ async function promptToInstall (name: string, installCommand: () => Promise<void
   }
 }
 
-// TODO: refactor to Nuxi
+// TODO: refactor to @nuxt/cli
 const installPrompts = new Set<string>()
 export function installNuxtModule (name: string, options?: EnsurePackageInstalledOptions) {
   if (installPrompts.has(name)) { return }

@@ -1,13 +1,13 @@
 import { joinURL, withQuery, withoutBase } from 'ufo'
-import type { NitroErrorHandler } from 'nitro/types'
-import { getRequestHeaders, send, setResponseHeader, setResponseHeaders, setResponseStatus } from 'h3'
+import type { NitroErrorHandler } from 'nitropack/types'
+import { appendResponseHeader, getRequestHeaders, send, setResponseHeader, setResponseHeaders, setResponseStatus } from 'h3'
 
-import { useNitroApp, useRuntimeConfig } from 'nitro/runtime'
+import { useNitroApp, useRuntimeConfig } from 'nitropack/runtime'
 import { isJsonRequest } from '../utils/error'
 import type { NuxtPayload } from '#app/nuxt'
 
 export default <NitroErrorHandler> async function errorhandler (error, event, { defaultHandler }) {
-  if (isJsonRequest(event)) {
+  if (event.handled || isJsonRequest(event)) {
     // let Nitro handle JSON errors
     return
   }
@@ -30,11 +30,12 @@ export default <NitroErrorHandler> async function errorhandler (error, event, { 
   const errorObject = defaultRes.body as Pick<NonNullable<NuxtPayload['error']>, 'error' | 'statusCode' | 'statusMessage' | 'message' | 'stack'> & { url: string, data: any }
   // remove proto/hostname/port from URL
   const url = new URL(errorObject.url)
-  errorObject.url = withoutBase(useRuntimeConfig(event).app.baseURL, url.pathname) + url.search + url.hash
+  errorObject.url = withoutBase(url.pathname, useRuntimeConfig(event).app.baseURL) + url.search + url.hash
   // add default server message
   errorObject.message ||= 'Server Error'
   // we will be rendering this error internally so we can pass along the error.data safely
   errorObject.data ||= error.data
+  errorObject.statusMessage ||= error.statusMessage
 
   delete defaultRes.headers['content-type'] // this would be set to application/json
   delete defaultRes.headers['content-security-policy'] // this would disable JS execution in the error page
@@ -51,12 +52,12 @@ export default <NitroErrorHandler> async function errorhandler (error, event, { 
   const res = isRenderingError
     ? null
     : await useNitroApp().localFetch(
-      withQuery(joinURL(useRuntimeConfig(event).app.baseURL, '/__nuxt_error'), errorObject),
-      {
-        headers: { ...reqHeaders, 'x-nuxt-error': 'true' },
-        redirect: 'manual',
-      },
-    ).catch(() => null)
+        withQuery(joinURL(useRuntimeConfig(event).app.baseURL, '/__nuxt_error'), errorObject),
+        {
+          headers: { ...reqHeaders, 'x-nuxt-error': 'true' },
+          redirect: 'manual',
+        },
+      ).catch(() => null)
 
   if (event.handled) { return }
 
@@ -73,6 +74,10 @@ export default <NitroErrorHandler> async function errorhandler (error, event, { 
 
   const html = await res.text()
   for (const [header, value] of res.headers.entries()) {
+    if (header === 'set-cookie') {
+      appendResponseHeader(event, header, value)
+      continue
+    }
     setResponseHeader(event, header, value)
   }
   setResponseStatus(event, res.status && res.status !== 200 ? res.status : defaultRes.status, res.statusText || defaultRes.statusText)
